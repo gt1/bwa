@@ -156,7 +156,7 @@ bwa_seqio_t *bwa_open_reads(int mode, const char *fn_fa)
 	return ks;
 }
 
-void bwa_aln_core(const char *prefix, const char *fn_fa, const gap_opt_t *opt)
+void bwa_aln_core(const char *prefix, const char *fn_fa, const gap_opt_t *opt, unsigned int const num_threads)
 {
 	int i, n_seqs, tot_seqs = 0;
 	bwa_seq_t *seqs;
@@ -169,7 +169,7 @@ void bwa_aln_core(const char *prefix, const char *fn_fa, const gap_opt_t *opt)
 
 	{ // load BWT
 		char *str = (char*)calloc(strlen(prefix) + 10, 1);
-		strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
+		strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str,num_threads);
 		free(str);
 	}
 
@@ -314,7 +314,7 @@ int bwa_aln(int argc, char *argv[])
 		free(opt);
 		return 1;
 	}
-	bwa_aln_core(prefix, argv[optind+1], opt);
+	bwa_aln_core(prefix, argv[optind+1], opt, opt->n_threads);
 	free(opt); free(prefix);
 	return 0;
 }

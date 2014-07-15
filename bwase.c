@@ -140,14 +140,14 @@ void bwa_cal_pac_pos_core(const bntseq_t *bns, const bwt_t *bwt, bwa_seq_t *seq,
 	if (seq->pos == (bwtint_t)-1) seq->type = BWA_TYPE_NO_MATCH;
 }
 
-void bwa_cal_pac_pos(const bntseq_t *bns, const char *prefix, int n_seqs, bwa_seq_t *seqs, int max_mm, float fnr)
+void bwa_cal_pac_pos(const bntseq_t *bns, const char *prefix, int n_seqs, bwa_seq_t *seqs, int max_mm, float fnr, unsigned int const num_threads)
 {
 	int i, j, strand, n_multi;
 	char str[1024];
 	bwt_t *bwt;
 	// load forward SA
-	strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
-	strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt);
+	strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str,num_threads);
+	strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt,num_threads);
 	for (i = 0; i != n_seqs; ++i) {
 		bwa_seq_t *p = &seqs[i];
 		bwa_cal_pac_pos_core(bns, bwt, p, max_mm, fnr);
@@ -501,7 +501,7 @@ void bwase_initialize()
 	for (i = 1; i != 256; ++i) g_log_n[i] = (int)(4.343 * log(i) + 0.5);
 }
 
-void bwa_sai2sam_se_core(const char *prefix, const char *fn_sa, const char *fn_fa, int n_occ, const char *rg_line)
+void bwa_sai2sam_se_core(const char *prefix, const char *fn_sa, const char *fn_fa, int n_occ, const char *rg_line, unsigned int const num_threads)
 {
 	extern bwa_seqio_t *bwa_open_reads(int mode, const char *fn_fa);
 	int i, n_seqs, tot_seqs = 0, m_aln;
@@ -549,7 +549,7 @@ void bwa_sai2sam_se_core(const char *prefix, const char *fn_sa, const char *fn_f
 		}
 
 		fprintf(stderr, "[bwa_aln_core] convert to sequence coordinate... ");
-		bwa_cal_pac_pos(bns, prefix, n_seqs, seqs, opt.max_diff, opt.fnr); // forward bwt will be destroyed here
+		bwa_cal_pac_pos(bns, prefix, n_seqs, seqs, opt.max_diff, opt.fnr, num_threads); // forward bwt will be destroyed here
 		fprintf(stderr, "%.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC); t = clock();
 
 		fprintf(stderr, "[bwa_aln_core] refine gapped alignments... ");
@@ -576,12 +576,14 @@ int bwa_sai2sam_se(int argc, char *argv[])
 {
 	int c, n_occ = 3;
 	char *prefix, *rg_line = 0;
-	while ((c = getopt(argc, argv, "hn:f:r:")) >= 0) {
+	unsigned int num_threads = 1;
+	while ((c = getopt(argc, argv, "hn:f:r:t:")) >= 0) {
 		switch (c) {
 		case 'h': break;
 		case 'r':
 			if ((rg_line = bwa_set_rg(optarg)) == 0) return 1;
 			break;
+		case 't': num_threads = atoi(optarg); break;
 		case 'n': n_occ = atoi(optarg); break;
 		case 'f': xreopen(optarg, "w", stdout); break;
 		default: return 1;
@@ -596,7 +598,7 @@ int bwa_sai2sam_se(int argc, char *argv[])
 		fprintf(stderr, "[%s] fail to locate the index\n", __func__);
 		return 1;
 	}
-	bwa_sai2sam_se_core(prefix, argv[optind+1], argv[optind+2], n_occ, rg_line);
+	bwa_sai2sam_se_core(prefix, argv[optind+1], argv[optind+2], n_occ, rg_line, num_threads);
 	free(prefix);
 	return 0;
 }

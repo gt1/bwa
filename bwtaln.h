@@ -132,7 +132,7 @@ extern "C" {
 #endif
 
 	gap_opt_t *gap_init_opt();
-	void bwa_aln_core(const char *prefix, const char *fn_fa, const gap_opt_t *opt);
+	void bwa_aln_core(const char *prefix, const char *fn_fa, const gap_opt_t *opt, unsigned int const num_threads);
 
 	bwa_seqio_t *bwa_seq_open(const char *fn);
 	bwa_seqio_t *bwa_bam_open(const char *fn, int which);

@@ -1,6 +1,16 @@
+ifdef LPR
+LPRBASEDIR=${LPR}
+LPRCPPFLAGS=-DHAVE_LIB_LUSTREPARALLELREAD -I${LPRBASEDIR}/include
+LPRLIBS=-L${LPRBASEDIR}/lib -Wl,-rpath=${LPRBASEDIR}/lib -llustreparallelread
+else
+LPRBASEDIR=
+LPRCPPFLAGS=
+LPRLIBS=
+endif
+
 CC=			gcc
 #CC=			clang --analyze
-CFLAGS=		-g -Wall -Wno-unused-function -O2
+CFLAGS=		-g -Wall -Wno-unused-function -O3 ${LPRCPPFLAGS}
 WRAP_MALLOC=-DUSE_MALLOC_WRAPPERS
 AR=			ar
 DFLAGS=		-DHAVE_PTHREAD $(WRAP_MALLOC)
@@ -11,7 +21,7 @@ AOBJS=		QSufSort.o bwt_gen.o bwase.o bwaseqio.o bwtgap.o bwtaln.o bamlite.o \
 			bwtsw2_chain.o fastmap.o bwtsw2_pair.o
 PROG=		bwa
 INCLUDES=	
-LIBS=		-lm -lz -lpthread
+LIBS=		${LPRLIBS} -lm -lz -pthread
 SUBDIRS=	.
 
 .SUFFIXES:.c .o .cc

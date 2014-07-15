@@ -30,6 +30,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdint.h>
+#include <errno.h>
 #include "utils.h"
 #include "bwt.h"
 #include "kvec.h"
@@ -386,11 +387,16 @@ static bwtint_t fread_fix(FILE *fp, bwtint_t size, void *a)
 	return offset;
 }
 
-void bwt_restore_sa(const char *fn, bwt_t *bwt)
+#if defined(HAVE_LIB_LUSTREPARALLELREAD)
+#include <liblustreparallelread/liblustreparallelread_readfilepart.h>
+#endif
+
+void bwt_restore_sa(const char *fn, bwt_t *bwt, unsigned int const num_threads)
 {
 	char skipped[256];
-	FILE *fp;
+	FILE *fp = NULL;
 	bwtint_t primary;
+	int64_t sapos = -1;
 
 	fp = xopen(fn, "rb");
 	err_fread_noeof(&primary, sizeof(bwtint_t), 1, fp);
@@ -404,15 +410,46 @@ void bwt_restore_sa(const char *fn, bwt_t *bwt)
 	bwt->sa = (bwtint_t*)calloc(bwt->n_sa, sizeof(bwtint_t));
 	bwt->sa[0] = -1;
 
-	fread_fix(fp, sizeof(bwtint_t) * (bwt->n_sa - 1), bwt->sa + 1);
-	err_fclose(fp);
+	sapos = ftell(fp);
+	
+	if ( sapos < 0 )
+		err_fatal("bwt_restore_sa", "ftell call on file '%s' failed: %s", fn, strerror(errno));	
+	
+	#if defined(HAVE_LIB_LUSTREPARALLELREAD)
+	if ( num_threads > 1 )
+	{
+		int rc = -1;
+		char * samem = NULL;
+		uint64_t samemsize = 0;
+
+		err_fclose(fp);
+		
+		fprintf(stderr,"[V] loading sa file %s with %u threads...",fn,num_threads);
+
+		samem = (char *)(bwt->sa + 1);
+		samemsize = sizeof(bwtint_t) * (bwt->n_sa - 1);
+
+		rc = liblustreparallelread_readfilepart(fn,sapos,sapos+samemsize,num_threads,&samem,&samemsize);
+
+		if (0 != rc)
+			err_fatal("bwt_restore_sa","liblustreparallelread_readfilepart failed on file %s: %s", fn, strerror(errno));
+			
+		fprintf(stderr,"done.\n");
+	}
+	else
+	#endif
+	{
+		fread_fix(fp, sizeof(bwtint_t) * (bwt->n_sa - 1), bwt->sa + 1);
+		err_fclose(fp);
+	}
 }
 
-bwt_t *bwt_restore_bwt(const char *fn)
+bwt_t *bwt_restore_bwt(const char *fn, unsigned int const num_threads)
 {
-	bwt_t *bwt;
-	FILE *fp;
-
+	bwt_t *bwt = NULL;
+	FILE *fp = NULL;
+	int64_t bwtpos = -1;
+	
 	bwt = (bwt_t*)calloc(1, sizeof(bwt_t));
 	fp = xopen(fn, "rb");
 	err_fseek(fp, 0, SEEK_END);
@@ -421,11 +458,41 @@ bwt_t *bwt_restore_bwt(const char *fn)
 	err_fseek(fp, 0, SEEK_SET);
 	err_fread_noeof(&bwt->primary, sizeof(bwtint_t), 1, fp);
 	err_fread_noeof(bwt->L2+1, sizeof(bwtint_t), 4, fp);
-	fread_fix(fp, bwt->bwt_size<<2, bwt->bwt);
 	bwt->seq_len = bwt->L2[4];
-	err_fclose(fp);
-	bwt_gen_cnt_table(bwt);
+	bwtpos = (int64_t)ftell(fp);
+	
+	if ( bwtpos < 0 )
+		err_fatal("bwt_restore_bwt", "ftell call on file '%s' failed: %s", fn, strerror(errno));
+	
+	#if defined(HAVE_LIB_LUSTREPARALLELREAD)
+	if ( num_threads > 1 )
+	{
+		int rc = -1;
+		char * bwtmem = NULL;
+		uint64_t bwtmemsize = 0;
 
+		err_fclose(fp);
+		
+		fprintf(stderr,"[V] loading bwt file %s with %u threads...",fn,num_threads);
+
+		bwtmem = (char *)(bwt->bwt);
+		bwtmemsize = (bwt->bwt_size<<2);
+
+		rc = liblustreparallelread_readfilepart(fn,bwtpos,bwtpos+bwtmemsize,num_threads,&bwtmem,&bwtmemsize);
+
+		if (0 != rc)
+			err_fatal("bwt_restore_bwt","liblustreparallelread_readfilepart failed on file %s: %s", fn, strerror(errno));
+			
+		fprintf(stderr,"done.\n");
+	}
+	else
+	#endif
+	{
+		fread_fix(fp, bwt->bwt_size<<2, bwt->bwt);
+		err_fclose(fp);
+	}
+	
+	bwt_gen_cnt_table(bwt);
 	return bwt;
 }
 

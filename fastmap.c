@@ -202,7 +202,7 @@ int main_mem(int argc, char *argv[])
 //	if (opt->T < opt->min_HSP_score) opt->T = opt->min_HSP_score; // TODO: tie ->T to MEM_HSP_COEF
 	bwa_fill_scmat(opt->a, opt->b, opt->mat);
 
-	if ((idx = bwa_idx_load(argv[optind], BWA_IDX_ALL)) == 0) return 1; // FIXME: memory leak
+	if ((idx = bwa_idx_load(argv[optind], BWA_IDX_ALL,opt->n_threads)) == 0) return 1; // FIXME: memory leak
 
 	ko = kopen(argv[optind + 1], &fd);
 	if (ko == 0) {
@@ -271,12 +271,14 @@ int main_fastmap(int argc, char *argv[])
 	smem_i *itr;
 	const bwtintv_v *a;
 	bwaidx_t *idx;
+	unsigned int num_threads = 1;
 
-	while ((c = getopt(argc, argv, "w:l:p")) >= 0) {
+	while ((c = getopt(argc, argv, "w:l:pt:")) >= 0) {
 		switch (c) {
 			case 'p': print_seq = 1; break;
 			case 'w': min_iwidth = atoi(optarg); break;
 			case 'l': min_len = atoi(optarg); break;
+			case 't': num_threads = atoi(optarg); break;
 		    default: return 1;
 		}
 	}
@@ -287,7 +289,7 @@ int main_fastmap(int argc, char *argv[])
 
 	fp = xzopen(argv[optind + 1], "r");
 	seq = kseq_init(fp);
-	if ((idx = bwa_idx_load(argv[optind], BWA_IDX_BWT|BWA_IDX_BNS)) == 0) return 1;
+	if ((idx = bwa_idx_load(argv[optind], BWA_IDX_BWT|BWA_IDX_BNS,num_threads)) == 0) return 1;
 	itr = smem_itr_init(idx->bwt);
 	while (kseq_read(seq) >= 0) {
 		err_printf("SQ\t%s\t%ld", seq->name.s, seq->seq.l);

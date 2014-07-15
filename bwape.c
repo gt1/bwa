@@ -258,7 +258,7 @@ typedef struct {
 } aln_buf_t;
 
 int bwa_cal_pac_pos_pe(const bntseq_t *bns, const char *prefix, bwt_t *const _bwt, int n_seqs, bwa_seq_t *seqs[2], FILE *fp_sa[2], isize_info_t *ii,
-					   const pe_opt_t *opt, const gap_opt_t *gopt, const isize_info_t *last_ii)
+					   const pe_opt_t *opt, const gap_opt_t *gopt, const isize_info_t *last_ii, unsigned int const num_threads)
 {
 	int i, j, cnt_chg = 0;
 	char str[1024];
@@ -271,8 +271,8 @@ int bwa_cal_pac_pos_pe(const bntseq_t *bns, const char *prefix, bwt_t *const _bw
 	buf[1] = (aln_buf_t*)calloc(n_seqs, sizeof(aln_buf_t));
 
 	if (_bwt == 0) { // load forward SA
-		strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
-		strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt);
+		strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str,num_threads);
+		strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt, num_threads);
 	} else bwt = _bwt;
 
 	// SE
@@ -621,7 +621,7 @@ ubyte_t *bwa_paired_sw(const bntseq_t *bns, const ubyte_t *_pacseq, int n_seqs, 
 	return pacseq;
 }
 
-void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const fn_fa[2], pe_opt_t *popt, const char *rg_line)
+void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const fn_fa[2], pe_opt_t *popt, const char *rg_line, unsigned int const num_threads)
 {
 	extern bwa_seqio_t *bwa_open_reads(int mode, const char *fn_fa);
 	int i, j, n_seqs, tot_seqs = 0;
@@ -661,8 +661,8 @@ void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const f
 	ks[1] = bwa_open_reads(opt.mode, fn_fa[1]);
 	{ // for Illumina alignment only
 		if (popt->is_preload) {
-			strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str);
-			strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt);
+			strcpy(str, prefix); strcat(str, ".bwt");  bwt = bwt_restore_bwt(str,num_threads);
+			strcpy(str, prefix); strcat(str, ".sa"); bwt_restore_sa(str, bwt, num_threads);
 			pac = (ubyte_t*)calloc(bns->l_pac/4+1, 1);
 			err_rewind(bns->fp_pac);
 			err_fread_noeof(pac, 1, bns->l_pac/4+1, bns->fp_pac);
@@ -681,7 +681,7 @@ void bwa_sai2sam_pe_core(const char *prefix, char *const fn_sa[2], char *const f
 		t = clock();
 
 		fprintf(stderr, "[bwa_sai2sam_pe_core] convert to sequence coordinate... \n");
-		cnt_chg = bwa_cal_pac_pos_pe(bns, prefix, bwt, n_seqs, seqs, fp_sa, &ii, popt, &opt, &last_ii);
+		cnt_chg = bwa_cal_pac_pos_pe(bns, prefix, bwt, n_seqs, seqs, fp_sa, &ii, popt, &opt, &last_ii, num_threads);
 		fprintf(stderr, "[bwa_sai2sam_pe_core] time elapses: %.2f sec\n", (float)(clock() - t) / CLOCKS_PER_SEC); t = clock();
 		fprintf(stderr, "[bwa_sai2sam_pe_core] changing coordinates of %d alignments.\n", cnt_chg);
 
@@ -734,9 +734,10 @@ int bwa_sai2sam_pe(int argc, char *argv[])
 	int c;
 	pe_opt_t *popt;
 	char *prefix, *rg_line = 0;
+	unsigned int num_threads = 1;
 
 	popt = bwa_init_pe_opt();
-	while ((c = getopt(argc, argv, "a:o:sPn:N:c:f:Ar:")) >= 0) {
+	while ((c = getopt(argc, argv, "a:o:sPn:N:c:f:Ar:t:")) >= 0) {
 		switch (c) {
 		case 'r':
 			if ((rg_line = bwa_set_rg(optarg)) == 0) return 1;
@@ -750,6 +751,7 @@ int bwa_sai2sam_pe(int argc, char *argv[])
 		case 'c': popt->ap_prior = atof(optarg); break;
 		case 'f': xreopen(optarg, "w", stdout); break;
 		case 'A': popt->force_isize = 1; break;
+		case 't': num_threads = atoi(optarg); break;
 		default: return 1;
 		}
 	}
@@ -777,7 +779,7 @@ int bwa_sai2sam_pe(int argc, char *argv[])
 		fprintf(stderr, "[%s] fail to locate the index\n", __func__);
 		return 1;
 	}
-	bwa_sai2sam_pe_core(prefix, argv + optind + 1, argv + optind+3, popt, rg_line);
+	bwa_sai2sam_pe_core(prefix, argv + optind + 1, argv + optind+3, popt, rg_line, num_threads);
 	free(prefix); free(popt);
 	return 0;
 }

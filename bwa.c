@@ -209,7 +209,7 @@ char *bwa_idx_infer_prefix(const char *hint)
 	}
 }
 
-bwt_t *bwa_idx_load_bwt(const char *hint)
+bwt_t *bwa_idx_load_bwt(const char *hint, unsigned int const num_threads)
 {
 	char *tmp, *prefix;
 	bwt_t *bwt;
@@ -220,14 +220,19 @@ bwt_t *bwa_idx_load_bwt(const char *hint)
 	}
 	tmp = calloc(strlen(prefix) + 5, 1);
 	strcat(strcpy(tmp, prefix), ".bwt"); // FM-index
-	bwt = bwt_restore_bwt(tmp);
+	bwt = bwt_restore_bwt(tmp,num_threads);
 	strcat(strcpy(tmp, prefix), ".sa");  // partial suffix array (SA)
-	bwt_restore_sa(tmp, bwt);
+	bwt_restore_sa(tmp, bwt,num_threads);
 	free(tmp); free(prefix);
 	return bwt;
 }
 
-bwaidx_t *bwa_idx_load(const char *hint, int which)
+#if defined(HAVE_LIB_LUSTREPARALLELREAD)
+#include <liblustreparallelread/liblustreparallelread_readfilepart.h>
+#include <errno.h>
+#endif
+
+bwaidx_t *bwa_idx_load(const char *hint, int which, unsigned int const num_threads)
 {
 	bwaidx_t *idx;
 	char *prefix;
@@ -237,13 +242,59 @@ bwaidx_t *bwa_idx_load(const char *hint, int which)
 		return 0;
 	}
 	idx = calloc(1, sizeof(bwaidx_t));
-	if (which & BWA_IDX_BWT) idx->bwt = bwa_idx_load_bwt(hint);
+	if (which & BWA_IDX_BWT) idx->bwt = bwa_idx_load_bwt(hint,num_threads);
 	if (which & BWA_IDX_BNS) {
 		idx->bns = bns_restore(prefix);
 		if (which & BWA_IDX_PAC) {
 			idx->pac = calloc(idx->bns->l_pac/4+1, 1);
-			err_fread_noeof(idx->pac, 1, idx->bns->l_pac/4+1, idx->bns->fp_pac); // concatenated 2-bit encoded sequence
-			err_fclose(idx->bns->fp_pac);
+			
+			#if defined(HAVE_LIB_LUSTREPARALLELREAD)
+			if ( num_threads > 1 )
+			{
+				char pac_filename[1024];
+				char * pacmem = NULL;
+				uint64_t pacmemsize = 0;
+				int rc = -1;
+				int64_t const pacpos = ftell(idx->bns->fp_pac);
+				
+				strcat(strcpy(pac_filename, prefix), ".pac");
+
+				fprintf(stderr,"[V] Loading PAC file %s using %d threads...", &pac_filename[0], (int)num_threads);
+	
+				if ( pacpos < 0 )
+				{
+					int const error = errno;
+					err_fatal("bwa_idx_load", "ftell call on file '%s' failed: %s", &pac_filename[0], strerror(error));
+				}
+
+				fclose(idx->bns->fp_pac);
+
+
+				pacmem = (char*)(idx->pac);
+				pacmemsize = idx->bns->l_pac/4+1;
+
+				rc = liblustreparallelread_readfilepart(&pac_filename[0],pacpos,pacpos+pacmemsize,num_threads,&pacmem,&pacmemsize);
+
+				if (0 != rc)
+				{
+					int const error = errno;
+					err_fatal("bwa_idx_load","liblustreparallelread_readfilepart failed on file %s: %s", &pac_filename[0], strerror(error));
+				}
+
+				fprintf(stderr,"done.\n");
+			}
+			else
+			#endif
+			{
+				err_fread_noeof(
+					idx->pac, 
+					1, 
+					idx->bns->l_pac/4+1
+					, 
+					idx->bns->fp_pac
+				); // concatenated 2-bit encoded sequence
+				err_fclose(idx->bns->fp_pac);
+			}
 			idx->bns->fp_pac = 0;
 		}
 	}
